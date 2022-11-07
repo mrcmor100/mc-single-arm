@@ -84,11 +84,12 @@ C Control flags (from input file)
 	logical*4 ms_flag
 	logical*4 wcs_flag
 	logical*4 store_all
+	logical*4 s1x_s2x_on /.true./  !flag for turning off hodo_pmts in 1X planes
 
 c	common /hutflag/ cer_flag,vac_flag
 C Hardwired control flags.
 	logical*4 hut_ntuple	/.true./
-        logical*4 spec_ntuple   /.false./
+        logical*4 spec_ntuple   /.true./
 	logical*4 decay_flag	/.false./
 
 	real*8	dpp_var(2),dth_var(2),dph_var(2),ztg_var(2)
@@ -424,6 +425,13 @@ C Strip off header
 	  if (ispec.eq.2) use_front_sieve=.false.
 	endif
 
+! Read in flag to turn off hodo planes
+	read (chanin,1001,end=1000,err=1000) str_line
+	write(*,*),str_line(1:last_char(str_line))
+	if (.not.rd_int(str_line,tmp_int)) 
+     > stop 'ERROR: s1x_s2x_on in setup file!'
+	if (tmp_int.eq.0) s1x_s2x_on = .false.
+
 	inp_seed = 4357
 !     Read in flag for 'inp_seed' for setting seed to input file value
 	read (chanin,1001,end=1000,err=1000) str_line
@@ -688,7 +696,7 @@ c
 	     call mc_shms(p_spec, th_spec, dpp_s, x_s, y_s, z_s, 
      >          dxdz_s, dydz_s,
      >		x_fp, dx_fp, y_fp, dy_fp, m2, shms_spec,
-     >		ms_flag, wcs_flag, decay_flag, resmult, xtar_init, ok_spec, 
+     >		ms_flag, s1x_s2x_on, wcs_flag, decay_flag, resmult, xtar_init, ok_spec, 
      >          pathlen, 5)
 
 	     if (spec_ntuple) then

@@ -1,6 +1,6 @@
 	subroutine mc_shms(p_spec, th_spec, dpp, x, y, z, dxdz, dydz,
      >			x_fp,dx_fp,y_fp,dy_fp,m2, spec,
-     >		ms_flag, wcs_flag, decay_flag, resmult, fry, ok_spec, 
+     >		ms_flag,s1x_s2x_on, wcs_flag, decay_flag, resmult, fry, ok_spec, 
      >         pathlen, spectr)
 
 C+______________________________________________________________________________
@@ -82,6 +82,7 @@ C The arguments
 	real*8	x_fp,y_fp,dx_fp,dy_fp		!Focal plane values to return
 	real*8	p_spec,th_spec			!spectrometer setting
         logical ms_flag, wcs_flag		!particle, m_scat, wc_smear
+	logical s1x_s2x_on !flag for turning off hodo_pmts in 1X planes
 	logical	ok_spec				!true if particle makes it
 	logical decay_flag,dflag
 	real*8 fry 		!fast raster y position.
@@ -970,7 +971,7 @@ C If we get this far, the particle is in the hut.
 
 
 C and track through the detector hut
-	  call mc_shms_hut(m2,p,x_fp,dx_fp,y_fp,dy_fp,ms_flag,wcs_flag,
+	  call mc_shms_hut(m2,p,x_fp,dx_fp,y_fp,dy_fp,ms_flag,s1x_s2x_on,wcs_flag,
      >		decay_flag,dflag,resmult,spec,
      >          ok_hut,0.0,pathlen,spectr)
 	   if (.not. ok_hut) then

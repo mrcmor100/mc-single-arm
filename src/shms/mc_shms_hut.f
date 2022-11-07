@@ -1,5 +1,5 @@
       subroutine mc_shms_hut (m2,p,x_fp,dx_fp,y_fp,dy_fp,ms_flag,
-     > wcs_flag,
+     > s1x_s2x_on, wcs_flag,
      > decay_flag,dflag,resmult,spec,ok_hut,zinit,pathlen,
      > spectr)
 C----------------------------------------------------------------------
@@ -35,6 +35,7 @@ C The arguments
 	real*8	p,m2			!momentum and mass of particle
 	real*8	x_fp,y_fp,dx_fp,dy_fp	!Focal plane values to return
 	logical	ms_flag, wcs_flag	!particle, m_scat, wc_smear
+	logical s1x_s2x_on !flag for turning off hodo_pmts in 1X planes
 	logical	ok_hut			!true if particle makes it
 	logical decay_flag,dflag
 	real*8	xcal,ycal		!Position of track at calorimeter.
@@ -302,6 +303,19 @@ C at last cathode foil of second drift chamber set, drift to the 1st hodoscope
 	     goto 500
 	  endif
 	endif
+CAM Check on PMTs being off in S1X
+CAM Currently hardcoded parameters are set for PMTs 1-7 being turned OFF
+        if(.not.s1x_s2x_on) then
+           if (xs.lt.(hscin_1x_bot+hscin_1x_offset).or.
+     >          xs.gt.(hscin_1x_top+hscin_1x_offset)) then
+              shmsSTOP_s1 = shmsSTOP_s1 + 1
+              if (use_det_cut) then
+                 shmsSTOP_id=105
+                 goto 500
+              endif
+           endif
+        endif
+CAM End Check on PMTs being off in S1X
         spec(44)=ys
 	radw = hscin_1x_thick/hscin_radlen
 	if(ms_flag) call musc(m2,p,radw,dydzs,dxdzs)
@@ -363,6 +377,19 @@ C drift to 2nd hodoscope
 	     goto 500
 	  endif
 	endif
+CAM Check on PMTs being off in S2X
+CAM Currently hardcoded parameters are set for PMTs 1-7 being turned OFF
+        if(.not.s1x_s2x_on) then
+           if (xs.lt.(hscin_2x_bot+hscin_2x_offset).or.
+     >          xs.gt.(hscin_2x_top+hscin_2x_offset)) then
+              shmsSTOP_s3 = shmsSTOP_s3 + 1
+              if (use_det_cut) then
+                 shmsSTOP_id=106
+                 goto 500
+              endif
+           endif
+        endif
+CAM End check on PMTs being off in S2X
         spec(46)=ys
 	radw = hscin_2x_thick/hscin_radlen
 	if(ms_flag) call musc(m2,p,radw,dydzs,dxdzs)

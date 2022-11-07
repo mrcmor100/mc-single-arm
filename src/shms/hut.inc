@@ -160,12 +160,14 @@ C Scintillator positions and thicknesses
 	real*8 hscin_1x_zpos
 	real*8 hscin_1x_thick
 	real*8 hscin_1x_left,hscin_1x_right,hscin_1x_offset
+	real*8 hscin_1x_top,hscin_1x_bot
 	real*8 hscin_1y_zpos
 	real*8 hscin_1y_thick
 	real*8 hscin_1y_top,hscin_1y_bot,hscin_1y_offset
 	real*8 hscin_2x_zpos,hscin_2y_zpos
 	real*8 hscin_2x_thick,hscin_2y_thick
 	real*8 hscin_2x_left,hscin_2x_right,hscin_2x_offset
+	real*8 hscin_2x_top,hscin_2x_bot
 	real*8 hscin_2y_top,hscin_2y_bot,hscin_2y_offset
 
 	parameter (hscin_1x_zpos = 56.9-4.8)
@@ -178,10 +180,14 @@ C Scintillator positions and thicknesses
 	parameter (hscin_2y_thick = 1.000*1.067)
 	parameter (hscin_1x_left  =  50.)
 	parameter (hscin_1x_right = -50.)
+	parameter (hscin_1x_top  =  48.)
+	parameter (hscin_1x_bot = -3.)
 	parameter (hscin_1x_offset = 0.0)
 	parameter (hscin_1y_top   = -45.)
 	parameter (hscin_1y_bot   =  45.)
 	parameter (hscin_1y_offset = 0.0)
+	parameter (hscin_2x_top  =  52.5)
+	parameter (hscin_2x_bot = -7.5)
 	parameter (hscin_2x_left  =   55.)
 	parameter (hscin_2x_right =  -55.)
 	parameter (hscin_2x_offset =  0.)
