@@ -12,12 +12,13 @@ C-______________________________________________________________________________
 	include 'shms/struct_shms.inc'
 	include 'spectrometers.inc'
 	include 'constants.inc'
+	include 'hbook.inc'
 
 c Vector (real*4) for hut ntuples - needs to match dimension of variables
-	real*4		shms_hut(23)
-	real*4          shms_spec(59)
+	real*8		shms_hut(23)
+	real*8          shms_spec(59)
 
-	real*4          hms_hut(23)
+	real*8          hms_hut(23)
 c
 	real*8 xs_num,ys_num,xc_sieve,yc_sieve
 	real*8 xsfr_num,ysfr_num,xc_frsieve,yc_frsieve
@@ -45,7 +46,7 @@ C Event limits, topdrawer limits, physics quantities
 	real*8 gen_lim(8)			!M.C. phase space limits.
 	real*8 gen_lim_up(3)
 	real*8 gen_lim_down(3)
-        real *8 gen_mom                         !local variable for track momentum in elastic event
+        real*8 gen_mom                         !local variable for track momentum in elastic event
 
 	real*8 cut_dpp,cut_dth,cut_dph,cut_z	!cuts on reconstructed quantities
 	real*8 xoff,yoff,zoff                   !Beam offsets
@@ -114,8 +115,7 @@ C Function definitions.
 
 	parameter(zero=0.0)
 
-        integer iquest
-        common/quest/iquest(100)
+	integer ivar
 
 	save		!Remember it all!
 
@@ -226,7 +226,7 @@ C Open setup file.
 
 C Define HBOOK/NTUPLE filename if used.
 	if (hut_ntuple) then
-	  hbook_filename = '../worksim/'//rawname(1:last_char(rawname))//'.rzdat'
+	  hbook_filename = '../worksim/'//rawname(1:last_char(rawname))//'.bin'
 	endif
 C Open Output file.
 	filename = '../outfiles/'//rawname(1:last_char(rawname))//'.out'
@@ -698,7 +698,9 @@ c
 		shms_spec(54)= dph_init ! dx/dz (mr)
 		shms_spec(55)= dth_init ! dy/dz (mr)
 c            if (ok_spec) spec(58) =1.
-		call hfn(1412,shms_spec)
+		do ivar=1,SpecNtupleSize
+		   write(SpecNtupleIO) shms_spec(ivar)
+		enddo
 	     endif
 	  elseif(ispec.eq.1) then
 	     call mc_hms(p_spec, th_spec, dpp_s, x_s, y_s, z_s, 
@@ -767,7 +769,9 @@ C for spectrometer ntuples
 	       shms_hut(21)= shmsSTOP_id
 	       shms_hut(22)= x
 	       shms_hut(23)= y
-	       call hfn(1411,shms_hut)
+	       do ivar=1,NtupleSize
+		  write(NtupleIO) shms_hut(ivar)
+	       enddo
 	    endif
 	 endif
 
@@ -798,7 +802,9 @@ C for spectrometer ntuples
                hms_hut(21)=hSTOP_id
 	       hms_hut(22)= x
 	       hms_hut(23)= y
-	       call hfn(1,hms_hut)
+	       do ivar=1,NtupleSize
+		  write(NtupleIO) hms_hut(ivar)
+	       enddo
 	    endif
 	 endif
 
@@ -815,14 +821,9 @@ C------------------------------------------------------------------------------C
 
 C Close NTUPLE file.
 
-	if(ispec.eq.2) then
-	   call hrout(1411,i,' ')
-	   if (spec_ntuple) call hrout(1412,i,' ')
-	   call hrend('HUT')
-	elseif(ispec.eq.1) then
-	   call hrout(1,i,' ')
-	   call hrend('HUT')
-	endif
+	close(NtupleIO)
+	if (spec_ntuple) close(SPecNtupleIO)
+
 
 	write (chanout,1002)
 	write (chanout,1003) p_spec,th_spec*degrad
