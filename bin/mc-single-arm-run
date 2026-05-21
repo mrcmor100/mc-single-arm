@@ -62,9 +62,7 @@ fi
 
 WORK_ROOT="$APP_ROOT"
 RUN_VIEW=""
-APP_INFILES="$(readlink -f "$APP_ROOT/infiles" 2>/dev/null || true)"
-DATA_INFILES="$(readlink -f "$DATA_ROOT/infiles" 2>/dev/null || true)"
-if [[ "$APP_INFILES" != "$DATA_INFILES" ]]; then
+if [[ "${MC_SINGLE_ARM_IN_PLACE:-0}" != "1" ]]; then
   RUN_VIEW="$(mktemp -d "${TMPDIR:-/tmp}/mc-single-arm-run.XXXXXX")"
   trap '[[ -n "$RUN_VIEW" ]] && rm -rf "$RUN_VIEW"' EXIT
   mkdir -p "$RUN_VIEW"
