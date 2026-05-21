@@ -1,0 +1,11 @@
+.git
+mc-data
+outfiles
+runout
+worksim
+src/*.o
+src/*/*.o
+src/mc_single_arm
+util/root_tree/*.o
+util/root_tree/*.co
+util/root_tree/make_root_tree

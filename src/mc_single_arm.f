@@ -107,7 +107,9 @@ C Function definitions.
 	INTEGER irnd
 	REAL rnd(99)
         integer      itime,ij
+        integer      seed_status, seed_length
         character	timestring*30
+        character*32 seed_env
 
         character*80 rawname, filename, hbook_filename
 	real*4  secnds,zero
@@ -453,10 +455,30 @@ C------------------------------------------------------------------------------C
 
 ! TH - use "Itrial" instead of "trial" for gfortran. Somehow the stringlib.f
 ! function does not type cast string to integer otherwise.
+          seed_env = ' '
+          call get_environment_variable('MC_SINGLE_ARM_SEED', seed_env,
+     >         seed_length, seed_status)
+          if(seed_status.eq.0 .and. seed_length.gt.0) then
+             read(seed_env(1:seed_length),*,err=9001) itime
+             write(6,*) 'Using random seed from MC_SINGLE_ARM_SEED'
+             write(6,*) 'Starting random number seed: ',itime
+          else
+             itime=time8()
+             call ctime(itime,timestring)
+             write(6,*) 'Using random seed based on clock time'
+             write(6,*) 'Starting random number seed: ',itime
+          endif
+          goto 9002
+ 9001     continue
+          write(6,*) 'Invalid MC_SINGLE_ARM_SEED; using clock time'
           itime=time8()
-   	  call ctime(itime,timestring)
-	  write(6,*) 'Using random seed based on clock time'
+          call ctime(itime,timestring)
           write(6,*) 'Starting random number seed: ',itime
+ 9002     continue
+          if(itime.eq.0) then
+             write(6,*) 'Random seed 0 is invalid; using 1'
+             itime = 1
+          endif
 C DJG - If you want to use default (fixed) seed, comment out the line below
           call sgrnd(itime)
 

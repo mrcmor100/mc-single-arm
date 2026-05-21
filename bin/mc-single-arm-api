@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+
+APP_ROOT = Path(__file__).resolve().parents[1]
+
+
+INPUT_SCHEMA: list[dict[str, Any]] = [
+    {"key": "n_trials", "label": "Monte-Carlo trials", "type": "integer", "default": 100000, "required": True, "section": "Run Setup", "help": "Number of simulated trials."},
+    {"key": "spectrometer", "label": "Spectrometer", "type": "enum", "default": 2, "required": True, "section": "Run Setup", "help": "1 = HMS, 2 = SHMS.", "choices": [{"value": 1, "label": "HMS"}, {"value": 2, "label": "SHMS"}]},
+    {"key": "spectrometer_momentum_mev", "label": "Spectrometer momentum", "type": "number", "default": 2000.0, "required": True, "section": "Run Setup", "units": "MeV/c"},
+    {"key": "spectrometer_angle_deg", "label": "Spectrometer angle", "type": "number", "default": 20.0, "required": True, "section": "Run Setup", "units": "deg"},
+    {"key": "dp_down_percent", "label": "M.C. dp/p down limit", "type": "number", "default": -15.0, "required": True, "section": "Phase Space", "units": "%"},
+    {"key": "dp_up_percent", "label": "M.C. dp/p up limit", "type": "number", "default": 30.0, "required": True, "section": "Phase Space", "units": "%"},
+    {"key": "theta_down_mr", "label": "M.C. theta down limit", "type": "number", "default": -55.0, "required": True, "section": "Phase Space", "units": "mr"},
+    {"key": "theta_up_mr", "label": "M.C. theta up limit", "type": "number", "default": 55.0, "required": True, "section": "Phase Space", "units": "mr"},
+    {"key": "phi_down_mr", "label": "M.C. phi down limit", "type": "number", "default": -50.0, "required": True, "section": "Phase Space", "units": "mr"},
+    {"key": "phi_up_mr", "label": "M.C. phi up limit", "type": "number", "default": 50.0, "required": True, "section": "Phase Space", "units": "mr"},
+    {"key": "beam_spot_horizontal_cm", "label": "Horizontal beam spot size", "type": "number", "default": 0.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "beam_spot_vertical_cm", "label": "Vertical beam spot size", "type": "number", "default": 0.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "target_length_cm", "label": "Target length", "type": "number", "default": 20.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "raster_x_cm", "label": "Raster full-width x", "type": "number", "default": 0.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "raster_y_cm", "label": "Raster full-width y", "type": "number", "default": 0.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "cut_dpp_percent", "label": "dp/p reconstruction cut", "type": "number", "default": 100.0, "required": True, "section": "Reconstruction Cuts", "units": "%"},
+    {"key": "cut_theta_mr", "label": "Theta reconstruction cut", "type": "number", "default": 100.0, "required": True, "section": "Reconstruction Cuts", "units": "mr"},
+    {"key": "cut_phi_mr", "label": "Phi reconstruction cut", "type": "number", "default": 100.0, "required": True, "section": "Reconstruction Cuts", "units": "mr"},
+    {"key": "cut_ztgt_cm", "label": "ZTGT reconstruction cut", "type": "number", "default": 100.0, "required": True, "section": "Reconstruction Cuts", "units": "cm"},
+    {"key": "rad_len_cm", "label": "Radiation length of target material", "type": "number", "default": 866.0, "required": True, "section": "Beam And Target", "units": "cm"},
+    {"key": "beam_x_offset_cm", "label": "Beam x offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "beam_y_offset_cm", "label": "Beam y offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "target_z_offset_cm", "label": "Target z offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "spectrometer_x_offset_cm", "label": "Spectrometer x offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "spectrometer_y_offset_cm", "label": "Spectrometer y offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "spectrometer_z_offset_cm", "label": "Spectrometer z offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "cm"},
+    {"key": "spectrometer_xp_offset_mr", "label": "Spectrometer xp offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "mr"},
+    {"key": "spectrometer_yp_offset_mr", "label": "Spectrometer yp offset", "type": "number", "default": 0.0, "required": True, "section": "Offsets", "units": "mr"},
+    {"key": "particle_id", "label": "Particle identification", "type": "enum", "default": 0, "required": True, "section": "Physics Flags", "choices": [{"value": 0, "label": "Electron"}, {"value": 1, "label": "Proton"}, {"value": 2, "label": "Deuteron"}, {"value": 3, "label": "Pion"}, {"value": 4, "label": "Kaon"}]},
+    {"key": "multiple_scattering_flag", "label": "Multiple scattering", "type": "boolean", "default": True, "required": True, "section": "Physics Flags"},
+    {"key": "wire_chamber_smearing_flag", "label": "Wire chamber smearing", "type": "boolean", "default": True, "required": True, "section": "Physics Flags"},
+    {"key": "store_all_events_flag", "label": "Store all events", "type": "boolean", "default": True, "required": True, "section": "Physics Flags"},
+    {"key": "beam_energy_mev", "label": "Beam energy", "type": "number", "default": 0.0, "required": False, "section": "Optional", "units": "MeV"},
+    {"key": "use_sieve_flag", "label": "Use sieve", "type": "boolean", "default": False, "required": False, "section": "Optional"},
+    {"key": "target_atomic_mass", "label": "Target atomic number", "type": "number", "default": 12.0, "required": False, "section": "Optional", "help": "Z+N for elastic event generation."},
+]
+
+
+def example_payloads() -> list[dict[str, str]]:
+    examples = []
+    infiles_root = APP_ROOT / "share" / "infiles"
+    if not infiles_root.exists():
+        infiles_root = APP_ROOT / "infiles"
+    for path in sorted(infiles_root.glob("*.inp")):
+        content = path.read_text(encoding="utf-8", errors="replace")
+        summary = next((line.strip("! ").strip() for line in content.splitlines() if line.strip().startswith("!") and "----" not in line), path.stem)
+        examples.append({"name": path.name, "path": f"infiles/{path.name}", "summary": summary, "content": content})
+    return examples
+
+
+def contract() -> dict[str, Any]:
+    return {
+        "analysis_id": "mc-single-arm",
+        "name": "Hall C mc-single-arm",
+        "version": "container-contract-v1",
+        "image_digest": "",
+        "input_schema": INPUT_SCHEMA,
+        "examples": example_payloads(),
+        "run": {
+            "command": "mc-single-arm-run --data-root /data --basename <stem> [--seed <integer>]",
+            "mounts": [{"path": "/data", "mode": "rw", "description": "Contains infiles, outfiles, runout, and worksim."}],
+            "input_filename": "infiles/<basename>.inp",
+            "seed_env": "MC_SINGLE_ARM_SEED",
+            "seed_arg": "--seed",
+        },
+        "outputs": [
+            {"key": "rootfile", "path": "worksim/<basename>.root", "regenerable": True},
+            {"key": "runout", "path": "runout/<basename>.out", "regenerable": True},
+            {"key": "outfile", "path": "outfiles/<basename>.out", "regenerable": True},
+        ],
+    }
+
+
+def to_yaml(value: Any, indent: int = 0) -> str:
+    pad = " " * indent
+    if isinstance(value, dict):
+        lines = []
+        for key, item in value.items():
+            if isinstance(item, (dict, list)):
+                lines.append(f"{pad}{key}:")
+                lines.append(to_yaml(item, indent + 2))
+            else:
+                lines.append(f"{pad}{key}: {json.dumps(item)}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.append(f"{pad}-")
+                lines.append(to_yaml(item, indent + 2))
+            else:
+                lines.append(f"{pad}- {json.dumps(item)}")
+        return "\n".join(lines)
+    return f"{pad}{json.dumps(value)}"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="mc-single-arm container contract")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    describe = subparsers.add_parser("describe", help="Emit the analysis contract.")
+    describe.add_argument("--format", choices=("json", "yaml"), default="yaml")
+    args = parser.parse_args()
+
+    payload = contract()
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        print(to_yaml(payload))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
