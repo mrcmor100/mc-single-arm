@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="${MC_SINGLE_ARM_APP_ROOT:-/opt/mc-single-arm}"
+if [[ ! -d "$APP_ROOT/src" ]]; then
+  APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
+DATA_ROOT="${MC_SINGLE_ARM_DATA_ROOT:-/data}"
+BASENAME=""
+INPUT_FILE=""
+SEED="${MC_SINGLE_ARM_SEED:-}"
+CONVERT_ROOT=1
+KEEP_BIN=0
+FORCE=0
+
+usage() {
+  cat <<'USAGE'
+usage: mc-single-arm-run [--data-root DIR] (--basename NAME | --input FILE) [--seed INT] [--no-root] [--keep-bin] [--force]
+
+If --seed is omitted, mc-single-arm chooses a random seed from the clock and
+prints the actual seed in runout/<basename>.out.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --data-root) DATA_ROOT="$2"; shift 2 ;;
+    --basename) BASENAME="$2"; shift 2 ;;
+    --input) INPUT_FILE="$2"; shift 2 ;;
+    --seed) SEED="$2"; shift 2 ;;
+    --no-root) CONVERT_ROOT=0; shift ;;
+    --keep-bin) KEEP_BIN=1; shift ;;
+    --force) FORCE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+mkdir -p "$DATA_ROOT/infiles" "$DATA_ROOT/outfiles" "$DATA_ROOT/runout" "$DATA_ROOT/worksim"
+
+if [[ -n "$INPUT_FILE" ]]; then
+  BASENAME="$(basename "$INPUT_FILE")"
+  BASENAME="${BASENAME%.inp}"
+fi
+
+if [[ -z "$BASENAME" ]]; then
+  echo "either --basename or --input is required" >&2
+  exit 2
+fi
+BASENAME="$(basename "$BASENAME")"
+BASENAME="${BASENAME%.inp}"
+
+if [[ ! -f "$DATA_ROOT/infiles/$BASENAME.inp" ]]; then
+  if [[ -n "$INPUT_FILE" ]]; then
+    cp "$INPUT_FILE" "$DATA_ROOT/infiles/$BASENAME.inp"
+  elif [[ -f "$APP_ROOT/share/infiles/$BASENAME.inp" ]]; then
+    cp "$APP_ROOT/share/infiles/$BASENAME.inp" "$DATA_ROOT/infiles/$BASENAME.inp"
+  else
+    echo "input file not found: $DATA_ROOT/infiles/$BASENAME.inp" >&2
+    exit 2
+  fi
+fi
+
+conflicts=()
+for candidate in \
+  "$DATA_ROOT/runout/$BASENAME.out" \
+  "$DATA_ROOT/outfiles/$BASENAME.out" \
+  "$DATA_ROOT/worksim/$BASENAME.root" \
+  "$DATA_ROOT/worksim/$BASENAME.bin"; do
+  [[ -e "$candidate" ]] && conflicts+=("$candidate")
+done
+
+if [[ "${#conflicts[@]}" -gt 0 && "$FORCE" -ne 1 ]]; then
+  printf 'Refusing to overwrite existing run artifacts:\n' >&2
+  printf '  %s\n' "${conflicts[@]}" >&2
+  if [[ -t 0 && -t 1 ]]; then
+    read -r -p "Overwrite these files? Type 'yes' to continue: " answer
+    if [[ "$answer" != "yes" ]]; then
+      echo "Run canceled." >&2
+      exit 3
+    fi
+  else
+    echo "Use --force only when running in an isolated per-run directory." >&2
+    exit 3
+  fi
+fi
+
+if [[ -n "$SEED" ]]; then
+  export MC_SINGLE_ARM_SEED="$SEED"
+fi
+
+if [[ ! -x "$APP_ROOT/src/mc_single_arm" ]]; then
+  make -C "$APP_ROOT/src" clean all
+fi
+
+WORK_ROOT="$APP_ROOT"
+RUN_VIEW=""
+if [[ "${MC_SINGLE_ARM_IN_PLACE:-0}" != "1" ]]; then
+  RUN_VIEW="$(mktemp -d "${TMPDIR:-/tmp}/mc-single-arm-run.XXXXXX")"
+  trap '[[ -n "$RUN_VIEW" ]] && rm -rf "$RUN_VIEW"' EXIT
+  mkdir -p "$RUN_VIEW"
+  cp -a "$APP_ROOT/src" "$RUN_VIEW/src"
+  mkdir -p "$RUN_VIEW/util"
+  cp -a "$APP_ROOT/util/root_tree" "$RUN_VIEW/util/root_tree"
+  ln -s "$DATA_ROOT/infiles" "$RUN_VIEW/infiles"
+  ln -s "$DATA_ROOT/outfiles" "$RUN_VIEW/outfiles"
+  ln -s "$DATA_ROOT/runout" "$RUN_VIEW/runout"
+  ln -s "$DATA_ROOT/worksim" "$RUN_VIEW/worksim"
+  WORK_ROOT="$RUN_VIEW"
+fi
+
+(
+  cd "$WORK_ROOT/src"
+  ./mc_single_arm <<EOF
+$BASENAME
+EOF
+) > "$DATA_ROOT/runout/$BASENAME.out" 2>&1
+
+if [[ "$CONVERT_ROOT" -eq 1 ]]; then
+  if [[ ! -x "$WORK_ROOT/util/root_tree/make_root_tree" ]]; then
+    make -C "$APP_ROOT/util/root_tree" clean all
+    if [[ "$WORK_ROOT" != "$APP_ROOT" ]]; then
+      cp "$APP_ROOT/util/root_tree/make_root_tree" "$WORK_ROOT/util/root_tree/make_root_tree"
+    fi
+  fi
+  (
+    cd "$WORK_ROOT/util/root_tree"
+    ./make_root_tree <<EOF
+$BASENAME
+EOF
+  ) >> "$DATA_ROOT/runout/$BASENAME.out" 2>&1
+  if [[ "$KEEP_BIN" -eq 0 ]]; then
+    rm -f "$DATA_ROOT/worksim/$BASENAME.bin"
+  fi
+fi
+
+echo "$DATA_ROOT/runout/$BASENAME.out"
