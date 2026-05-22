@@ -12,10 +12,14 @@ INPUT_FILE=""
 SEED="${MC_SINGLE_ARM_SEED:-}"
 CONVERT_ROOT=1
 KEEP_BIN=0
+FORCE=0
 
 usage() {
   cat <<'USAGE'
-usage: mc-single-arm-run [--data-root DIR] (--basename NAME | --input FILE) [--seed INT] [--no-root] [--keep-bin]
+usage: mc-single-arm-run [--data-root DIR] (--basename NAME | --input FILE) [--seed INT] [--no-root] [--keep-bin] [--force]
+
+If --seed is omitted, mc-single-arm chooses a random seed from the clock and
+prints the actual seed in runout/<basename>.out.
 USAGE
 }
 
@@ -27,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --seed) SEED="$2"; shift 2 ;;
     --no-root) CONVERT_ROOT=0; shift ;;
     --keep-bin) KEEP_BIN=1; shift ;;
+    --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -37,7 +42,6 @@ mkdir -p "$DATA_ROOT/infiles" "$DATA_ROOT/outfiles" "$DATA_ROOT/runout" "$DATA_R
 if [[ -n "$INPUT_FILE" ]]; then
   BASENAME="$(basename "$INPUT_FILE")"
   BASENAME="${BASENAME%.inp}"
-  cp "$INPUT_FILE" "$DATA_ROOT/infiles/$BASENAME.inp"
 fi
 
 if [[ -z "$BASENAME" ]]; then
@@ -48,8 +52,38 @@ BASENAME="$(basename "$BASENAME")"
 BASENAME="${BASENAME%.inp}"
 
 if [[ ! -f "$DATA_ROOT/infiles/$BASENAME.inp" ]]; then
-  echo "input file not found: $DATA_ROOT/infiles/$BASENAME.inp" >&2
-  exit 2
+  if [[ -n "$INPUT_FILE" ]]; then
+    cp "$INPUT_FILE" "$DATA_ROOT/infiles/$BASENAME.inp"
+  elif [[ -f "$APP_ROOT/share/infiles/$BASENAME.inp" ]]; then
+    cp "$APP_ROOT/share/infiles/$BASENAME.inp" "$DATA_ROOT/infiles/$BASENAME.inp"
+  else
+    echo "input file not found: $DATA_ROOT/infiles/$BASENAME.inp" >&2
+    exit 2
+  fi
+fi
+
+conflicts=()
+for candidate in \
+  "$DATA_ROOT/runout/$BASENAME.out" \
+  "$DATA_ROOT/outfiles/$BASENAME.out" \
+  "$DATA_ROOT/worksim/$BASENAME.root" \
+  "$DATA_ROOT/worksim/$BASENAME.bin"; do
+  [[ -e "$candidate" ]] && conflicts+=("$candidate")
+done
+
+if [[ "${#conflicts[@]}" -gt 0 && "$FORCE" -ne 1 ]]; then
+  printf 'Refusing to overwrite existing run artifacts:\n' >&2
+  printf '  %s\n' "${conflicts[@]}" >&2
+  if [[ -t 0 && -t 1 ]]; then
+    read -r -p "Overwrite these files? Type 'yes' to continue: " answer
+    if [[ "$answer" != "yes" ]]; then
+      echo "Run canceled." >&2
+      exit 3
+    fi
+  else
+    echo "Use --force only when running in an isolated per-run directory." >&2
+    exit 3
+  fi
 fi
 
 if [[ -n "$SEED" ]]; then

@@ -70,11 +70,19 @@ def contract() -> dict[str, Any]:
         "input_schema": INPUT_SCHEMA,
         "examples": example_payloads(),
         "run": {
-            "command": "mc-single-arm-run --data-root /data --basename <stem> [--seed <integer>]",
+            "command": "mc-single-arm-run --data-root /data --basename <stem>",
             "mounts": [{"path": "/data", "mode": "rw", "description": "Contains infiles, outfiles, runout, and worksim."}],
             "input_filename": "infiles/<basename>.inp",
-            "seed_env": "MC_SINGLE_ARM_SEED",
-            "seed_arg": "--seed",
+            "seed_control": {
+                "mode": "runner_blocked",
+                "user_settable": False,
+                "description": "hallc-mc-runner does not expose a seed field for mc-single-arm. Manual mc-single-arm-run use may pass --seed; otherwise mc-single-arm chooses a clock-time seed and prints the actual seed in the run log.",
+                "log_pattern": r"Starting random number seed:\s*(\d+)",
+            },
+            "overwrite_policy": {
+                "mode": "prompt_or_force",
+                "description": "Existing runout/outfiles/worksim artifacts are never overwritten without an interactive confirmation or --force.",
+            },
         },
         "outputs": [
             {"key": "rootfile", "path": "worksim/<basename>.root", "regenerable": True},
