@@ -4,18 +4,27 @@ This container packages the existing Hall C `mc-single-arm` program with a small
 runner that keeps inputs and outputs in predictable container paths. The
 simulation code and existing Makefiles are unchanged.
 
-## Build locally with Docker
+## Choose a version
+
+Container images are published from git tags. Pick the tag you want from the
+GitHub tags page, then use that same tag as the container version:
+
+<https://github.com/JeffersonLab/mc-single-arm/tags>
+
+Examples below use:
 
 ```bash
-docker build -f Containerfile -t mc-single-arm:local .
+TAG=<tag_name>
+IMAGE=ghcr.io/jeffersonlab/mc-single-arm:$TAG
 ```
 
 ## Inspect inputs
 
 ```bash
-docker run --rm mc-single-arm:local mc-single-arm-api describe
-docker run --rm mc-single-arm:local mc-single-arm-api describe --format json
-docker run --rm mc-single-arm:local mc-single-arm-api describe --format yaml
+docker pull "$IMAGE"
+docker run --rm "$IMAGE" mc-single-arm-api describe
+docker run --rm "$IMAGE" mc-single-arm-api describe --format json
+docker run --rm "$IMAGE" mc-single-arm-api describe --format yaml
 ```
 
 The default text output lists input sections, keys, labels, defaults, and data
@@ -37,7 +46,7 @@ Mount your input file into the container and pass its container-local path:
 docker run --rm \
   -v "$PWD/mc-data:/data" \
   -v "$PWD/my_run.inp:/input/my_run.inp:ro" \
-  mc-single-arm:local \
+  "$IMAGE" \
   mc-single-arm-run --input /input/my_run.inp
 ```
 
@@ -55,7 +64,7 @@ To run one of the bundled examples by name:
 ```bash
 docker run --rm \
   -v "$PWD/mc-data:/data" \
-  mc-single-arm:local \
+  "$IMAGE" \
   mc-single-arm-run --basename shms_20deg_3gev_10cmtarg_cryo17
 ```
 
@@ -80,11 +89,12 @@ runs, it refuses to overwrite unless `--force` is supplied.
 
 ## Apptainer
 
-Build a SIF from a local Docker image:
+On JLab farm nodes, or any computer with access to the JLab CVMFS mount, tagged
+SIF images are available here:
 
 ```bash
-docker build -f Containerfile -t mc-single-arm:local .
-apptainer build --force mc-single-arm.sif docker-daemon://mc-single-arm:local
+TAG=<tag_name>
+SIF=/cvmfs/oasis.opensciencegrid.org/jlab/hallc/mc-single-arm/mc-single-arm-$TAG.sif
 ```
 
 Run with a mounted data directory and an input file visible inside the
@@ -95,13 +105,29 @@ mkdir -p mc-data
 apptainer exec \
   --bind "$PWD/mc-data:/data" \
   --bind "$PWD/my_run.inp:/input/my_run.inp:ro" \
-  mc-single-arm.sif \
+  "$SIF" \
   mc-single-arm-run --input /input/my_run.inp
 ```
 
 Run a bundled example:
 
 ```bash
-apptainer exec --bind "$PWD/mc-data:/data" mc-single-arm.sif \
+apptainer exec --bind "$PWD/mc-data:/data" "$SIF" \
   mc-single-arm-run --basename shms_20deg_3gev_10cmtarg_cryo17
+```
+
+## Build locally
+
+Most users should run a tagged image instead of building locally. To test local
+container changes:
+
+```bash
+docker build -f Containerfile -t mc-single-arm:local .
+docker run --rm mc-single-arm:local mc-single-arm-run --help
+```
+
+To build a local Apptainer image from that Docker image:
+
+```bash
+apptainer build --force mc-single-arm.sif docker-daemon://mc-single-arm:local
 ```
