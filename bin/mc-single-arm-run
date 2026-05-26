@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="${MC_SINGLE_ARM_APP_ROOT:-/opt/mc-single-arm}"
+if [[ ! -d "$APP_ROOT/src" ]]; then
+  APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
+DATA_ROOT="${MC_SINGLE_ARM_DATA_ROOT:-/data}"
+BASENAME=""
+INPUT_FILE=""
+CONVERT_ROOT=1
+KEEP_BIN=0
+FORCE=0
+
+usage() {
+  cat <<'USAGE'
+usage: mc-single-arm-run [--data-root DIR] (--input FILE | --basename NAME) [--no-root] [--keep-bin] [--force]
+
+Run mc-single-arm in a container-friendly directory layout.
+
+Options:
+  --input FILE      Input file path visible inside the container.
+  --basename NAME   Use /data/infiles/NAME.inp, or a bundled example with NAME.
+  --data-root DIR   Writable run directory containing infiles, outfiles, runout,
+                    and worksim. Default: /data.
+  --no-root         Skip conversion from worksim/NAME.bin to worksim/NAME.root.
+  --keep-bin        Keep worksim/NAME.bin after ROOT conversion.
+  --force           Overwrite existing output artifacts without prompting.
+  -h, --help        Show this help.
+
+Examples:
+  mc-single-arm-run --input /input/my_run.inp
+  mc-single-arm-run --basename shms_20deg_3gev_10cmtarg_cryo17
+
+For Docker, mount host files to container-local paths first, for example:
+  docker run --rm -v "$PWD/mc-data:/data" -v "$PWD/my_run.inp:/input/my_run.inp:ro" \
+    IMAGE mc-single-arm-run --input /input/my_run.inp
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --data-root) DATA_ROOT="$2"; shift 2 ;;
+    --basename) BASENAME="$2"; shift 2 ;;
+    --input) INPUT_FILE="$2"; shift 2 ;;
+    --no-root) CONVERT_ROOT=0; shift ;;
+    --keep-bin) KEEP_BIN=1; shift ;;
+    --force) FORCE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+mkdir -p "$DATA_ROOT"
+DATA_ROOT="$(cd "$DATA_ROOT" && pwd)"
+mkdir -p "$DATA_ROOT/infiles" "$DATA_ROOT/outfiles" "$DATA_ROOT/runout" "$DATA_ROOT/worksim"
+
+if [[ -n "$INPUT_FILE" ]]; then
+  if [[ ! -f "$INPUT_FILE" ]]; then
+    echo "input file not found inside container: $INPUT_FILE" >&2
+    exit 2
+  fi
+  BASENAME="$(basename "$INPUT_FILE")"
+  BASENAME="${BASENAME%.inp}"
+fi
+
+if [[ -z "$BASENAME" ]]; then
+  echo "either --input or --basename is required" >&2
+  exit 2
+fi
+BASENAME="$(basename "$BASENAME")"
+BASENAME="${BASENAME%.inp}"
+TARGET_INPUT="$DATA_ROOT/infiles/$BASENAME.inp"
+
+if [[ -n "$INPUT_FILE" ]]; then
+  input_real="$(readlink -f "$INPUT_FILE")"
+  target_real="$(readlink -m "$TARGET_INPUT")"
+  if [[ "$input_real" != "$target_real" ]]; then
+    cp "$INPUT_FILE" "$TARGET_INPUT"
+  fi
+elif [[ ! -f "$TARGET_INPUT" ]]; then
+  if [[ -f "$APP_ROOT/share/infiles/$BASENAME.inp" ]]; then
+    cp "$APP_ROOT/share/infiles/$BASENAME.inp" "$TARGET_INPUT"
+  else
+    echo "input file not found: $TARGET_INPUT" >&2
+    echo "Bundled examples are in $APP_ROOT/share/infiles." >&2
+    exit 2
+  fi
+fi
+
+conflicts=()
+for candidate in \
+  "$DATA_ROOT/runout/$BASENAME.out" \
+  "$DATA_ROOT/outfiles/$BASENAME.out" \
+  "$DATA_ROOT/worksim/$BASENAME.root" \
+  "$DATA_ROOT/worksim/$BASENAME.bin"; do
+  [[ -e "$candidate" ]] && conflicts+=("$candidate")
+done
+
+if [[ "${#conflicts[@]}" -gt 0 && "$FORCE" -ne 1 ]]; then
+  printf 'Refusing to overwrite existing run artifacts:\n' >&2
+  printf '  %s\n' "${conflicts[@]}" >&2
+  if [[ -t 0 && -t 1 ]]; then
+    read -r -p "Overwrite these files? Type 'yes' to continue: " answer
+    if [[ "$answer" != "yes" ]]; then
+      echo "Run canceled." >&2
+      exit 3
+    fi
+  else
+    echo "Use --force only when running in an isolated per-run directory." >&2
+    exit 3
+  fi
+fi
+
+if [[ ! -x "$APP_ROOT/src/mc_single_arm" ]]; then
+  make -C "$APP_ROOT/src" clean all
+fi
+
+WORK_ROOT="$APP_ROOT"
+RUN_VIEW=""
+if [[ "${MC_SINGLE_ARM_IN_PLACE:-0}" != "1" ]]; then
+  RUN_VIEW="$(mktemp -d "${TMPDIR:-/tmp}/mc-single-arm-run.XXXXXX")"
+  trap '[[ -n "$RUN_VIEW" ]] && rm -rf "$RUN_VIEW"' EXIT
+  cp -a "$APP_ROOT/src" "$RUN_VIEW/src"
+  mkdir -p "$RUN_VIEW/util"
+  cp -a "$APP_ROOT/util/root_tree" "$RUN_VIEW/util/root_tree"
+  ln -s "$DATA_ROOT/infiles" "$RUN_VIEW/infiles"
+  ln -s "$DATA_ROOT/outfiles" "$RUN_VIEW/outfiles"
+  ln -s "$DATA_ROOT/runout" "$RUN_VIEW/runout"
+  ln -s "$DATA_ROOT/worksim" "$RUN_VIEW/worksim"
+  WORK_ROOT="$RUN_VIEW"
+fi
+
+(
+  cd "$WORK_ROOT/src"
+  ./mc_single_arm <<EOF
+$BASENAME
+EOF
+) > "$DATA_ROOT/runout/$BASENAME.out" 2>&1
+
+if [[ "$CONVERT_ROOT" -eq 1 ]]; then
+  if [[ ! -x "$WORK_ROOT/util/root_tree/make_root_tree" ]]; then
+    ROOT_PREFIX="${ROOTSYS:-$(root-config --prefix)}"
+    make -C "$APP_ROOT/util/root_tree" clean all ROOTSYS="$ROOT_PREFIX"
+    if [[ "$WORK_ROOT" != "$APP_ROOT" ]]; then
+      cp "$APP_ROOT/util/root_tree/make_root_tree" "$WORK_ROOT/util/root_tree/make_root_tree"
+    fi
+  fi
+  (
+    cd "$WORK_ROOT/util/root_tree"
+    ./make_root_tree <<EOF
+$BASENAME
+EOF
+  ) >> "$DATA_ROOT/runout/$BASENAME.out" 2>&1
+  if [[ "$KEEP_BIN" -eq 0 ]]; then
+    rm -f "$DATA_ROOT/worksim/$BASENAME.bin"
+  fi
+fi
+
+echo "$DATA_ROOT/runout/$BASENAME.out"

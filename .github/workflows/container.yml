@@ -1,0 +1,107 @@
+name: container
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "*"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image
+        run: docker build -f Containerfile -t mc-single-arm:test .
+
+      - name: Check runner help
+        run: docker run --rm mc-single-arm:test mc-single-arm-run --help
+
+      - name: Check description output
+        run: |
+          docker run --rm mc-single-arm:test mc-single-arm-api describe --format text
+          docker run --rm mc-single-arm:test mc-single-arm-api describe --format json
+
+      - name: Run container smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATA_ROOT="$(mktemp -d)"
+          INPUT_ROOT="$(mktemp -d)"
+
+          docker run --rm mc-single-arm:test \
+            cat /opt/mc-single-arm/share/infiles/shms_20deg_3gev_10cmtarg_cryo17.inp \
+            > "$INPUT_ROOT/smoke.inp"
+
+          python3 - "$INPUT_ROOT/smoke.inp" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          lines = path.read_text().splitlines()
+          for index, line in enumerate(lines):
+              stripped = line.strip()
+              if stripped and not stripped.startswith("!"):
+                  lines[index] = "       250\tMonte-Carlo trials"
+                  break
+          path.write_text("\n".join(lines) + "\n")
+          PY
+
+          docker run --rm \
+            -v "$DATA_ROOT:/data" \
+            -v "$INPUT_ROOT:/input:ro" \
+            mc-single-arm:test \
+            mc-single-arm-run --input /input/smoke.inp --force
+
+          test -s "$DATA_ROOT/runout/smoke.out"
+          test -s "$DATA_ROOT/outfiles/smoke.out"
+          test -s "$DATA_ROOT/worksim/smoke.root"
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=short,prefix=sha-
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
